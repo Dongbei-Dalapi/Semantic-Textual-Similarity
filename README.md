@@ -7,8 +7,6 @@ Given two sentences, participating systems are asked to return a continuous valu
 ## Usage
 
 ```
-**Usage example**
-```
 cd {project_folder/src}
 python ensemble.py
 ```
