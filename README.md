@@ -24,8 +24,11 @@ We calculated the similarity from the character n-grams extracted from two sente
 ### BOW cosine similarity
 Each sentence is represented as a Bag-of-Words (BOW) and each word is weighted by its IDF value. The cosine similarity between two sentences is then calculated as a feature. We got 1 feature for BOW.
 
+### Manhattan LSTM
+There is two identical LSTM network. LSTM is passed word vector representations of sentences and output a hidden state encoding semantic meaning of the sentences using manhattan distance. 
+
 ## Ensemble model
-We use Random Forests (RF), Gradient Boosting (GB) and XGBoost (XGB). We average the scores from three models to achieve better performance.
+We use Random Forests (RF), Gradient Boosting (GB),XGBoost (XGB) for traditional features and the LSTM model. We average the scores from four models to achieve better performance.
 
 ## Result
 
