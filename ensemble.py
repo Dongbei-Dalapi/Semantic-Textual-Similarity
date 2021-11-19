@@ -7,6 +7,10 @@ import numpy as np
 import os
 from traditional_nlp_model import extract_features
 import re
+from lstm_model import MaLSTM
+from word2vec import get_glove_embeddings
+from keras.preprocessing.sequence import pad_sequences
+from preprocessing import load_data, load_eval_data
 
 
 def ensemble(x_train, y_train):
@@ -21,11 +25,12 @@ def ensemble(x_train, y_train):
     return [rfr, gbr, xg]  # xg
 
 
-def ensemble_predict(models, x_test):
+def ensemble_predict(models, x_test, lstm_model, s1, s2):
     predictions = []
     for model in models:
         predictions.append(model.predict(x_test))
-    preds = sum(predictions) / len(models)
+    predictions.append(lstm_model.predict(s1, s2).flatten())
+    preds = sum(predictions) / (len(models) + 1)
     classified_preds = []
     for i in range(len(preds)):
         p = round(preds[i])
@@ -36,60 +41,6 @@ def ensemble_predict(models, x_test):
         else:
             classified_preds.append(p)
     return np.array(classified_preds)
-
-
-def load_data(folder_path):
-    """
-    Load training data
-    :param folder_path: the folder path
-    :return: sentences and labels
-    """
-    text1 = []
-    text2 = []
-    labels = []
-    for filename in os.listdir(folder_path):
-        input = re.search(r'.*input.*txt', filename)
-        if input:
-            with open(folder_path + '/' + filename) as f:
-                text_lines = f.readlines()
-            gs_file = filename.replace("input", "gs")
-            with open(folder_path + '/' + gs_file) as f:
-                labels_lines = f.readlines()
-            for text, label in zip(text_lines, labels_lines):
-                if label != '' and label != '\n':
-                    t1 = text.strip().split('\t')[0]
-                    t2 = text.strip().split('\t')[1]
-                    text1.append(t1)
-                    text2.append(t2)
-                    labels.append(float(label))
-    return text1, text2, labels
-
-
-def load_eval_data(folder_path, category):
-    """
-    load testing data and remove data without label
-    :param folder_path: the folder path
-    :param category: source category
-    :return: sentences and labels
-    """
-    text1 = []
-    text2 = []
-    labels = []
-    try:
-        with open(folder_path + '/' + "STS2016.input." + category + ".txt") as f:
-            text_lines = f.readlines()
-        with open(folder_path + '/' + "STS2016.gs." + category + ".txt") as f:
-            labels_lines = f.readlines()
-        for text, label in zip(text_lines, labels_lines):
-            if label != '' and label != '\n':
-                t1 = text.strip().split('\t')[0]
-                t2 = text.strip().split('\t')[1]
-                text1.append(t1)
-                text2.append(t2)
-                labels.append(float(label))
-    except:
-        print('not a valid category name')
-    return text1, text2, labels
 
 
 if __name__ == '__main__':
@@ -113,117 +64,57 @@ if __name__ == '__main__':
         train_text2.extend(text2)
         train_labels.extend(label)
     # 2016 - testing data
-    test_text1_headline, test_text2_headline, test_labels_headline = load_eval_data(
-        test_dir + "/2016", 'headlines')
-    test_text1_plagiarism, test_text2_plagiarism, test_labels_plagiarism = load_eval_data(
-        test_dir + "/2016", 'plagiarism')
-    test_text1_postediting, test_text2_postediting, test_labels_postediting = load_eval_data(
-        test_dir + "/2016", 'postediting')
-    test_text1_aa, test_text2_aa, test_labels_aa = load_eval_data(
-        test_dir + "/2016", 'answer-answer')
-    test_text1_qq, test_text2_qq, test_labels_qq = load_eval_data(
-        test_dir + "/2016", 'question-question')
-    test_text1, test_text2, test_labels = load_data(
-        test_dir + '/2016')
+    categories = ['headlines', 'plagiarism', 'postediting',
+                  'answer-answer', 'question-question']
+    test_text1, test_text2, test_labels, indexs = load_eval_data(
+        test_dir + '/2016', categories)
 
     train_features, test_features = extract_features(train_text1, train_text2,
                                                      test_text1, test_text2)
+    max_len = 20
+    tokenzier, embedding_matrix = get_glove_embeddings(
+        train_text1, train_text2)
+    train_seq1 = tokenzier.texts_to_sequences(train_text1)
+    train_seq2 = tokenzier.texts_to_sequences(train_text2)
+    train_seq1 = pad_sequences(train_seq1, maxlen=max_len)
+    train_seq2 = pad_sequences(train_seq2, maxlen=max_len)
+    test_seq1 = tokenzier.texts_to_sequences(test_text1)
+    test_seq2 = tokenzier.texts_to_sequences(test_text2)
+    test_seq1 = pad_sequences(test_seq1, maxlen=max_len)
+    test_seq2 = pad_sequences(test_seq2, maxlen=max_len)
 
     train_ngram_overlap = train_features[:, 0:4]
     train_bow = train_features[:, [4]]
-    # train_pos_overlap = train_features[:, [5, 6]]
 
     test_ngram_overlap = test_features[:, 0:4]
     test_bow = test_features[:, [4]]
-    # test_pos_overlap = test_features[:, [5, 6]]
 
-    test_index_start = 0
-    test_index_end = len(test_text1_headline)
-    test_ngram_overlap_headline = test_features[test_index_start:test_index_end, 0:4]
-    test_bow_headline = test_features[test_index_start:test_index_end, [4]]
-    test_headline = test_features[test_index_start:test_index_end, :]
-    test_labels_headline = test_labels[test_index_start:test_index_end]
-
-    test_index_start = test_index_end
-    test_index_end += len(test_text1_plagiarism)
-    test_ngram_overlap_plagiarism = test_features[test_index_start:test_index_end, 0:4]
-    test_bow_plagiarism = test_features[test_index_start:test_index_end, [4]]
-    test_plagiarism = test_features[test_index_start:test_index_end, :]
-    test_labels_plagiarism = test_labels[test_index_start:test_index_end]
-
-    test_index_start = test_index_end
-    test_index_end += len(test_text1_postediting)
-    test_ngram_overlap_postediting = test_features[test_index_start:test_index_end, 0:4]
-    test_bow_postediting = test_features[test_index_start:test_index_end, [4]]
-    test_postediting = test_features[test_index_start:test_index_end, :]
-    test_labels_postediting = test_labels[test_index_start:test_index_end]
-
-    test_index_start = test_index_end
-    test_index_end += len(test_text1_aa)
-    test_ngram_overlap_aa = test_features[test_index_start:test_index_end, 0:4]
-    test_bow_aa = test_features[test_index_start:test_index_end, [4]]
-    test_aa = test_features[test_index_start:test_index_end, :]
-    test_labels_aa = test_labels[test_index_start:test_index_end]
-
-    test_index_start = test_index_end
-    test_index_end += len(test_text1_qq)
-    test_ngram_overlap_qq = test_features[test_index_start:test_index_end, 0:4]
-    test_bow_qq = test_features[test_index_start:test_index_end, [4]]
-    test_qq = test_features[test_index_start:test_index_end, :]
-    test_labels_qq = test_labels[test_index_start:test_index_end]
-
-    # ngram overlap
-    models = ensemble(train_ngram_overlap, np.array(train_labels))
-    preds = ensemble_predict(models, test_ngram_overlap)
-    print('Pearsons ngram overlap  = %2.4f' % pearsonr(preds, test_labels)[0])
-    preds = ensemble_predict(models, test_ngram_overlap_headline)
-    print('Pearsons ngram overlap headline = %2.4f' %
-          pearsonr(preds, test_labels_headline)[0])
-    preds = ensemble_predict(models, test_ngram_overlap_plagiarism)
-    print('Pearsons ngram overlap plagiarism = %2.4f' %
-          pearsonr(preds, test_labels_plagiarism)[0])
-    preds = ensemble_predict(models, test_ngram_overlap_postediting)
-    print('Pearsons ngram overlap postediting = %2.4f' %
-          pearsonr(preds, test_labels_postediting)[0])
-    preds = ensemble_predict(models, test_ngram_overlap_aa)
-    print('Pearsons ngram overlap A-A = %2.4f' %
-          pearsonr(preds, test_labels_aa)[0])
-    preds = ensemble_predict(models, test_ngram_overlap_qq)
-    print('Pearsons ngram overlap Q-Q = %2.4f' %
-          pearsonr(preds, test_labels_qq)[0])
-
-    # BOW - tf-idf cosine similarity
-    models = ensemble(train_bow, np.array(train_labels))
-    preds = ensemble_predict(models, test_bow)
-    print('Pearsons BOW = %2.4f' % pearsonr(preds, test_labels)[0])
-    preds = ensemble_predict(models, test_bow_headline)
-    print('Pearsons BOW headline = %2.4f' %
-          pearsonr(preds, test_labels_headline)[0])
-    preds = ensemble_predict(models, test_bow_plagiarism)
-    print('Pearsons BOW plagiarism = %2.4f' %
-          pearsonr(preds, test_labels_plagiarism)[0])
-    preds = ensemble_predict(models, test_bow_postediting)
-    print('Pearsons BOW postediting = %2.4f' %
-          pearsonr(preds, test_labels_postediting)[0])
-    preds = ensemble_predict(models, test_bow_aa)
-    print('Pearsons BOW A-A = %2.4f' % pearsonr(preds, test_labels_aa)[0])
-    preds = ensemble_predict(models, test_bow_qq)
-    print('Pearsons BOW Q-Q = %2.4f' % pearsonr(preds, test_labels_qq)[0])
+    test_ngram_overlap_c = []
+    test_bow_c = []
+    test_all_c = []
+    test_labels_c = []
+    test_seq1_c = []
+    test_seq2_c = []
+    for i in range(len(indexs)):
+        if i != len(indexs)-1:
+            test_ngram_overlap_c.append(
+                test_features[indexs[i]:indexs[i+1], 0:4])
+            test_bow_c.append(test_features[indexs[i]:indexs[i+1], [4]])
+            test_all_c.append(test_features[indexs[i]:indexs[i+1], :])
+            test_labels_c.append(test_labels[indexs[i]:indexs[i+1]])
+            test_seq1_c.append(test_seq1[indexs[i]:indexs[i+1], :])
+            test_seq2_c.append(test_seq2[indexs[i]:indexs[i+1], :])
 
     # all features
     models = ensemble(train_features, np.array(train_labels))
-    preds = ensemble_predict(models, test_features)
-    print('Pearsons all = %2.4f' % pearsonr(preds, test_labels)[0])
-    preds = ensemble_predict(models, test_headline)
-    print('Pearsons headline = %2.4f' %
-          pearsonr(preds, test_labels_headline)[0])
-    preds = ensemble_predict(models, test_plagiarism)
-    print('Pearsons plagiarism = %2.4f' %
-          pearsonr(preds, test_labels_plagiarism)[0])
-    preds = ensemble_predict(models, test_postediting)
-    print('Pearsons postediting = %2.4f' %
-          pearsonr(preds, test_labels_postediting)[0])
-    preds = ensemble_predict(models, test_aa)
-    print('Pearsons A-A = %2.4f' % pearsonr(preds, test_labels_aa)[0])
-    preds = ensemble_predict(models, test_qq)
-    print('Pearsons Q-Q = %2.4f' % pearsonr(preds, test_labels_qq)[0])
+    lstm_model = MaLSTM(embedding_matrix, seq_dim=max_len,
+                        epoch=40, batch_size=64)
+    lstm_model.train(train_seq1, train_seq2, train_labels)
+    predictions = []
+    for c, test_c, g, seq1, seq2 in zip(categories, test_all_c, test_labels_c, test_seq1_c, test_seq2_c):
+        p = ensemble_predict(models, test_c, lstm_model, seq1, seq2)
+        print('Pearsons %s = %2.4f' % (c, pearsonr(np.squeeze(p), g)[0]))
+    p = ensemble_predict(models, test_features,
+                         lstm_model, test_seq1, test_seq2)
+    print('Pearsons all test = %2.4f' %
+          pearsonr(np.squeeze(p), test_labels)[0])
