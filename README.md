@@ -33,7 +33,9 @@ We use Random Forests (RF), Gradient Boosting (GB) and XGBoost (XGB). We average
 | -------------  | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ |
 | Ngram Overlap  | 0.7519       | 0.3726       | 0.4819       | 0.7942       | 0.5949       | 0.6327       |
 | BOW similarity | 0.7228       | 0.3408       | 0.3666       | 0.7335       | 0.5669       | 0.5635       |
-| All features   | 0.7409       | 0.3628       | 0.4339       | 0.7928       | 0.5855       | 0.6112       |
+| Overlap + BOW  | 0.7409       | 0.3628       | 0.4339       | 0.7928       | 0.5855       | 0.6112       |          |
+| All features   | 0.6423       | 0.7593       | 0.8061       | 0.5040       | 0.3780       | 0.6315       |
+
 
 ## Possible improvement
 more features and more model tuning will be added later.
