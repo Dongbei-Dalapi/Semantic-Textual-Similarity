@@ -1,8 +1,9 @@
 import warnings
 from typing import Sequence
 from keras.layers.convolutional import Conv1D
+from keras.layers.pooling import MaxPool1D
 from keras.models import Model, Sequential
-from keras.layers import Input, Embedding, LSTM, concatenate, Layer, Flatten, Dense, Dropout, Bidirectional, GlobalMaxPooling1D, GRU, GlobalAveragePooling1D
+from keras.layers import Input, Embedding, LSTM, concatenate, Layer, Flatten, Dense, Dropout, Bidirectional, GlobalMaxPooling1D, GRU, GlobalAveragePooling1D, Lambda, multiply
 from word2vec import get_w2v_embeddings
 import os
 from keras import backend as K
@@ -20,7 +21,7 @@ warnings.filterwarnings("ignore")
 
 class MaLSTM:
     def __init__(self, embedding_matrix, embedding_dim=300, seq_dim=20,
-                 dropout=0.2, lstm_unit=50, epoch=30, batch_size=64, lr=0.001, dense_unit=100):
+                 dropout=0.1, lstm_unit=64, epoch=30, batch_size=256, lr=0.005, dense_unit=64):
         self.embedding_dim = embedding_dim
         self.seq_dim = seq_dim
         self.dropout = dropout
@@ -40,10 +41,15 @@ class MaLSTM:
             self.embedding_matrix], trainable=False))
         initializer = tf.keras.initializers.Orthogonal()
         m.add(LSTM(self.lstm_unit, kernel_initializer=initializer,
-              dropout=0.2, recurrent_dropout=0.2, kernel_regularizer=l2(0.01), bias_regularizer=l2(0.01)))  # recurrent_regularizer=l2(0.01)
+              dropout=0.1, recurrent_dropout=0.1, recurrent_regularizer=l2(0.01)))  # recurrent_regularizer=l2(0.01), kernel_regularizer=l2(0.01))
         d = ManDist()([m(s1), m(s2)])
+        d = Dense(self.dense_unit, activation='relu')(d)
+        d = Dropout(self.dropout)(d)
+        d = Dense(self.dense_unit/2, activation='relu')(d)
+        d = Dropout(self.dropout)(d)
+        d = Dense(1, activation='sigmoid')(d)
 
-        model = Model(inputs=[s1, s2], outputs=[d])
+        model = Model(inputs=[s1, s2], outputs=d)
         opt = optimizers.Adam(learning_rate=self.lr)
         model.compile(optimizer=opt,
                       loss="mse", metrics=['acc'])
@@ -65,7 +71,7 @@ class MaLSTM:
         pyplot.close()
 
     def predict(self, sent1, sent2):
-        p = self.model.predict([sent1, sent2])
+        p = self.model.predict([sent1, sent2]) * 5
         return p
 
 
@@ -114,7 +120,7 @@ class LSTM_Model:
         merge = Dense(64, activation='relu')(merge)
         merge = Dropout(self.dropout)(merge)
         d = Dense(1, activation='sigmoid')(merge)
-        model = Model(inputs=[s1, s2], outputs=[d])
+        model = Model(inputs=[s1, s2], outputs=d)
         opt = optimizers.Adam(learning_rate=0.001)
         model.compile(optimizer=opt,
                       loss="binary_crossentropy", metrics=['acc'])
@@ -131,11 +137,81 @@ class LSTM_Model:
         pyplot.ylabel('loss')
         pyplot.xlabel('epoch')
         pyplot.legend(['train', 'validation'], loc='upper right')
-        pyplot.show()
+        pyplot.savefig('./train_val_loss.png')
+        pyplot.close()
 
     def predict(self, sent1, sent2):
         p = self.model.predict([sent1, sent2]) * 5
         return np.round(p)
+
+
+class CNN_Model:
+    def __init__(self, embedding_matrix, embedding_dim=300, seq_dim=20,
+                 dropout=0.2, epoch=30, batch_size=64, lr=0.01, cnnfilters=300):
+        self.embedding_dim = embedding_dim
+        self.seq_dim = seq_dim
+        self.dropout = dropout
+        self.epoch = epoch
+        self.batch_size = batch_size
+        self.lr = lr
+        self.cnnfilters = cnnfilters
+        self.embedding_matrix = embedding_matrix
+        self.model = self.build_model()
+
+    def build_model(self):
+        s1 = Input(shape=(self.seq_dim,), dtype='int32')
+        s2 = Input(shape=(self.seq_dim,), dtype='int32')
+        m = Sequential()
+        m.add(Embedding(self.embedding_matrix.shape[0], self.embedding_dim, input_length=self.seq_dim, weights=[
+            self.embedding_matrix], trainable=False))
+
+        m.add(Conv1D(self.cnnfilters, 1, padding='valid',
+              activation='relu', kernel_initializer='he_uniform'))
+        m.add(MaxPool1D(pool_size=self.seq_dim))
+        m.add(Flatten())
+        absDifference = Lambda(lambda X: K.abs(X[0] - X[1]))([m(s1), m(s2)])
+        mulDifference = multiply([m(s1), m(s2)])
+        allDifference = concatenate([absDifference, mulDifference])
+        allDifference = Dense(units=int(self.cnnfilters), activation='tanh',
+                              kernel_initializer='he_uniform')(allDifference)
+        dropout = Dropout(self.dropout)(allDifference)
+        output = Dense(6, activation='softmax',
+                       kernel_initializer='he_uniform')(dropout)
+        model = Model(inputs=[s1, s2], outputs=output)
+        opt = optimizers.Adam(learning_rate=self.lr)
+        model.compile(optimizer=opt,
+                      loss='categorical_crossentropy', metrics=['acc'])
+        return model
+
+    def _lossfunction(self, y_true, y_pred):
+        y_true = tf.cast(y_true, tf.float32)
+        ny_true = y_true[:, 1] + 2*y_true[:, 2] + 3 * \
+            y_true[:, 3] + 4*y_true[:, 4] + 5*y_true[:, 5]
+        ny_pred = y_pred[:, 1] + 2*y_pred[:, 2] + 3 * \
+            y_pred[:, 3] + 4*y_pred[:, 4] + 5*y_pred[:, 5]
+        my_true = K.mean(ny_true)
+        my_pred = K.mean(ny_pred)
+        var_true = (ny_true - my_true)**2
+        var_pred = (ny_pred - my_pred)**2
+        return -K.sum((ny_true-my_true)*(ny_pred-my_pred), axis=-1) / (K.sqrt(K.sum(var_true, axis=-1)*K.sum(var_pred, axis=-1)))
+
+    def train(self, train_data1, train_data2, train_label):
+        train_label = np.array(train_label)
+        es_callback = EarlyStopping(monitor='val_loss', patience=3, verbose=1)
+        history = self.model.fit([train_data1, train_data2], train_label, batch_size=self.batch_size,
+                                 epochs=self.epoch, verbose=1, shuffle=True, validation_split=0.3, callbacks=[es_callback])
+        pyplot.plot(history.history['loss'])
+        pyplot.plot(history.history['val_loss'])
+        pyplot.title('model train vs validation loss')
+        pyplot.ylabel('loss')
+        pyplot.xlabel('epoch')
+        pyplot.legend(['train', 'validation'], loc='upper right')
+        pyplot.savefig('./train_val_loss.png')
+        pyplot.close()
+
+    def predict(self, sent1, sent2):
+        p = self.model.predict([sent1, sent2])
+        return np.argmax(p, axis=1)
 
 
 class BERT_Model:

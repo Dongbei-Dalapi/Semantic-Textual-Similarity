@@ -7,7 +7,7 @@ import numpy as np
 import os
 from traditional_nlp_model import extract_features
 import re
-from lstm_model import MaLSTM
+from lstm_model import CNN_Model, MaLSTM
 from word2vec import get_glove_embeddings
 from keras.preprocessing.sequence import pad_sequences
 from preprocessing import load_data, load_eval_data
@@ -25,12 +25,13 @@ def ensemble(x_train, y_train):
     return [rfr, gbr, xg]  # xg
 
 
-def ensemble_predict(models, x_test, lstm_model, s1, s2):
+def ensemble_predict(models, x_test, lstm_model, s1, s2, cnn_model):
     predictions = []
     for model in models:
         predictions.append(model.predict(x_test))
     predictions.append(lstm_model.predict(s1, s2).flatten())
-    preds = sum(predictions) / (len(models) + 1)
+    predictions.append(cnn_model.predict(s1, s2))
+    preds = sum(predictions) / (len(models) + 2)
     classified_preds = []
     for i in range(len(preds)):
         p = round(preds[i])
@@ -51,22 +52,24 @@ if __name__ == '__main__':
     test_dir = data_dir + "/testing"
     # load data
     # 2012 - train - test
-    train_text1, train_text2, train_labels = load_data(
+    train_text1, train_text2, train_labels, train_one_hot_labels = load_data(
         train_dir + "/2012/train")
-    test_2012 = load_data(train_dir + "/2012/train")
+    test_2012 = load_data(train_dir + "/2012/test",)
     train_text1.extend(test_2012[0])
     train_text2.extend(test_2012[1])
     train_labels.extend(test_2012[2])
+    train_one_hot_labels.extend(test_2012[3])
     # 2013 - 2015
     for i in range(2013, 2016):
-        text1, text2, label = load_data(train_dir + "/" + str(i))
+        text1, text2, label, one_hot = load_data(train_dir + "/" + str(i))
         train_text1.extend(text1)
         train_text2.extend(text2)
         train_labels.extend(label)
+        train_one_hot_labels.extend(one_hot)
     # 2016 - testing data
     categories = ['headlines', 'plagiarism', 'postediting',
                   'answer-answer', 'question-question']
-    test_text1, test_text2, test_labels, indexs = load_eval_data(
+    test_text1, test_text2, test_labels, test_one_hot_labels, indexs = load_eval_data(
         test_dir + '/2016', categories)
 
     train_features, test_features = extract_features(train_text1, train_text2,
@@ -108,13 +111,16 @@ if __name__ == '__main__':
     # all features
     models = ensemble(train_features, np.array(train_labels))
     lstm_model = MaLSTM(embedding_matrix, seq_dim=max_len,
-                        epoch=40, batch_size=64)
+                        epoch=50, batch_size=256)
     lstm_model.train(train_seq1, train_seq2, train_labels)
+    cnn_model = CNN_Model(embedding_matrix, seq_dim=max_len,
+                          epoch=50, batch_size=256)
+    cnn_model.train(train_seq1, train_seq2, train_one_hot_labels)
     predictions = []
     for c, test_c, g, seq1, seq2 in zip(categories, test_all_c, test_labels_c, test_seq1_c, test_seq2_c):
-        p = ensemble_predict(models, test_c, lstm_model, seq1, seq2)
+        p = ensemble_predict(models, test_c, lstm_model, seq1, seq2, cnn_model)
         print('Pearsons %s = %2.4f' % (c, pearsonr(np.squeeze(p), g)[0]))
     p = ensemble_predict(models, test_features,
-                         lstm_model, test_seq1, test_seq2)
+                         lstm_model, test_seq1, test_seq2, cnn_model)
     print('Pearsons all test = %2.4f' %
           pearsonr(np.squeeze(p), test_labels)[0])

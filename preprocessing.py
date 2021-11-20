@@ -30,8 +30,8 @@ def text_clean(text):
     text = re.sub(r":", " : ", text)
     text = re.sub(r"\0s", "0", text)
     text = re.sub(r"\s{2,}", " ", text)
-    #stop_words = stopwords.words('english')
-    #filter_words = [w for w in text.split() if not w in stop_words]
+    # stop_words = stopwords.words('english')
+    # filter_words = [w for w in text.split() if not w in stop_words]
     return text  # " ".join(filter_words).strip()
 
 
@@ -42,7 +42,7 @@ def one_hot_encode(label):
     return label_one_hot
 
 
-def load_data(folder_path, one_hot=False):
+def load_data(folder_path):
     """
     Load training data
     :param folder_path: the folder path
@@ -50,6 +50,7 @@ def load_data(folder_path, one_hot=False):
     """
     text1 = []
     text2 = []
+    one_hot_labels = []
     labels = []
     for filename in os.listdir(folder_path):
         input = re.search(r'.*input.*txt', filename)
@@ -65,14 +66,12 @@ def load_data(folder_path, one_hot=False):
                     t2 = text.strip().split('\t')[1]
                     text1.append(text_clean(t1))
                     text2.append(text_clean(t2))
-                    if one_hot:
-                        labels.append(one_hot_encode(float(label)))
-                    else:
-                        labels.append(float(label))
-    return text1, text2, labels
+                    one_hot_labels.append(one_hot_encode(float(label)))
+                    labels.append(float(label))
+    return text1, text2, labels, one_hot_labels
 
 
-def load_eval_data(folder_path, categories, one_hot=False):
+def load_eval_data(folder_path, categories):
     """
     load testing data and remove data without label
     :param folder_path: the folder path
@@ -81,6 +80,7 @@ def load_eval_data(folder_path, categories, one_hot=False):
     """
     text1 = []
     text2 = []
+    one_hot_labels = []
     labels = []
     indexs = [0]
     current_len = 0
@@ -98,12 +98,10 @@ def load_eval_data(folder_path, categories, one_hot=False):
                     t2 = text.strip().split('\t')[1]
                     text1.append(text_clean(t1))
                     text2.append(text_clean(t2))
-                    if one_hot:
-                        labels.append(one_hot_encode(float(label)))
-                    else:
-                        labels.append(float(label))
+                    one_hot_labels.append(one_hot_encode(float(label)))
+                    labels.append(float(label))
             current_len += labels_count
             indexs.append(current_len)
         except:
             print('not a valid category name')
-    return text1, text2, labels, indexs
+    return text1, text2, labels, one_hot_labels, indexs
