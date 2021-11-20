@@ -27,6 +27,9 @@ Each sentence is represented as a Bag-of-Words (BOW) and each word is weighted b
 ### Manhattan LSTM
 There is two identical LSTM network. LSTM is passed word vector representations of sentences and output a hidden state encoding semantic meaning of the sentences using manhattan distance. 
 
+### CNN
+We add another CNN model to enhance the ensemble model. 
+
 ## Ensemble model
 We use Random Forests (RF), Gradient Boosting (GB),XGBoost (XGB) for traditional features and the LSTM model. We average the scores from four models to achieve better performance.
 
