@@ -7,7 +7,7 @@ Given two sentences, participating systems are asked to return a continuous valu
 ## Usage
 
 ```
-cd {project_folder/src}
+cd {project_folder/}
 python ensemble.py
 ```
 
